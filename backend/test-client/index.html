@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Learning Materials Generator</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+    <style>
+      body {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        font-family: Arial, sans-serif;
+      }
+
+      textarea {
+        width: 100%;
+        height: 200px;
+        margin: 10px 0;
+      }
+
+      .button-group {
+        margin: 20px 0;
+      }
+
+      .error {
+        color: red;
+        padding: 10px;
+        background: #ffebee;
+        border-radius: 4px;
+        display: none;
+      }
+
+      /* Flashcard styles */
+      .flashcard {
+        perspective: 1000px;
+        width: 300px;
+        height: 200px;
+        margin: 20px auto;
+      }
+
+      .flashcard-inner {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        text-align: center;
+        transition: transform 0.6s;
+        transform-style: preserve-3d;
+        cursor: pointer;
+      }
+
+      .flashcard.flipped .flashcard-inner {
+        transform: rotateY(180deg);
+      }
+
+      .flashcard-front,
+      .flashcard-back {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        backface-visibility: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        box-sizing: border-box;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+      }
+
+      .flashcard-back {
+        transform: rotateY(180deg);
+        background: #f5f5f5;
+      }
+
+      /* Quiz styles */
+      .quiz-question {
+        margin: 20px 0;
+        padding: 15px;
+        border: 1px solid #eee;
+        border-radius: 4px;
+      }
+
+      .quiz-options label {
+        display: block;
+        margin: 10px 0;
+        padding: 10px;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+
+      .quiz-options label:hover {
+        background-color: #f5f5f5;
+      }
+
+      .correct {
+        background-color: #e8f5e9;
+        color: #2e7d32;
+      }
+
+      .incorrect {
+        background-color: #ffebee;
+        color: #c62828;
+      }
+
+      .quiz-stats {
+        margin: 20px 0;
+        font-weight: bold;
+        font-size: 1.2em;
+      }
+
+      .button-group button,
+      .download-button {
+        padding: 8px 16px;
+        margin: 10px 5px;
+        border: none;
+        border-radius: 4px;
+        background-color: #4caf50;
+        color: white;
+        cursor: pointer;
+      }
+
+      .button-group button:hover,
+      .download-button:hover {
+        background-color: #45a049;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Learning Materials Generator</h1>
+
+    <div class="error" id="error"></div>
+
+    <textarea id="notes" placeholder="Enter your notes here..."></textarea>
+
+    <div class="button-group">
+      <button onclick="generateMaterial('mindmap')">Generate Mindmap</button>
+      <button onclick="generateMaterial('flashcards')">
+        Generate Flashcards
+      </button>
+      <button onclick="generateMaterial('quiz')">Generate Quiz</button>
+    </div>
+
+    <div id="output"></div>
+
+    <script>
+      // Initialize mermaid
+      mermaid.initialize({ startOnLoad: true });
+
+      async function generateMaterial(type) {
+        const notes = document.getElementById("notes").value;
+        const errorDiv = document.getElementById("error");
+        const outputDiv = document.getElementById("output");
+
+        if (!notes.trim()) {
+          showError("Please enter some notes first");
+          return;
+        }
+
+        try {
+          errorDiv.style.display = "none";
+          outputDiv.innerHTML = "Loading...";
+
+          const response = await fetch(
+            `http://localhost:3000/api/generate/${type}`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ notes }),
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          const data = await response.json();
+
+          if (type === "mindmap") {
+            outputDiv.innerHTML = `
+                <div>
+                    <pre class="mermaid">${data.data.content}</pre>
+                    <button onclick="downloadMindmap()" class="download-button">Download Mindmap</button>
+                </div>
+            `;
+            mermaid.init(undefined, document.querySelectorAll(".mermaid"));
+          } else if (type === "flashcards") {
+            displayFlashcards(data.data.flashcards);
+          } else if (type === "quiz") {
+            displayQuiz(data.data.questions);
+          }
+        } catch (error) {
+          showError("Error: " + error.message);
+        }
+      }
+
+      function displayFlashcards(flashcards) {
+        const outputDiv = document.getElementById("output");
+        outputDiv.innerHTML = "";
+
+        flashcards.forEach((card, index) => {
+          const flashcard = document.createElement("div");
+          flashcard.className = "flashcard";
+          flashcard.innerHTML = `
+                    <div class="flashcard-inner">
+                        <div class="flashcard-front">${card.front}</div>
+                        <div class="flashcard-back">${card.back}</div>
+                    </div>
+                `;
+          flashcard.onclick = () => flashcard.classList.toggle("flipped");
+          outputDiv.appendChild(flashcard);
+        });
+      }
+
+      function displayQuiz(questions) {
+        const outputDiv = document.getElementById("output");
+        outputDiv.innerHTML = "";
+
+        let score = 0;
+        let answered = 0;
+
+        const statsDiv = document.createElement("div");
+        statsDiv.className = "quiz-stats";
+        statsDiv.textContent = `Score: 0/${questions.length}`;
+        outputDiv.appendChild(statsDiv);
+
+        questions.forEach((q, qIndex) => {
+          const questionDiv = document.createElement("div");
+          questionDiv.className = "quiz-question";
+
+          let optionsHtml = "";
+          q.options.forEach((option) => {
+            optionsHtml += `
+              <label>
+                <input type="radio" name="q${qIndex}" value="${option}">
+                ${option}
+              </label>
+            `;
+          });
+
+          questionDiv.innerHTML = `
+            <p><strong>Question ${qIndex + 1}:</strong> ${q.question}</p>
+            <div class="quiz-options">${optionsHtml}</div>
+          `;
+
+          // Add change event listener for radio buttons
+          questionDiv.addEventListener("change", (e) => {
+            const selectedAnswer = e.target.value;
+            const labels = questionDiv.querySelectorAll("label");
+
+            labels.forEach((label) => {
+              const input = label.querySelector("input");
+              if (input.value === q.correctAnswer) {
+                label.classList.add("correct");
+              } else if (
+                input.value === selectedAnswer &&
+                selectedAnswer !== q.correctAnswer
+              ) {
+                label.classList.add("incorrect");
+              }
+            });
+
+            // Update score if not already answered
+            if (!questionDiv.dataset.answered) {
+              answered++;
+              if (selectedAnswer === q.correctAnswer) {
+                score++;
+              }
+              statsDiv.textContent = `Score: ${score}/${
+                questions.length
+              } (${Math.round((score / questions.length) * 100)}%)`;
+              questionDiv.dataset.answered = "true";
+            }
+
+            // Disable further answers for this question
+            labels.forEach((label) => {
+              label.querySelector("input").disabled = true;
+            });
+          });
+
+          outputDiv.appendChild(questionDiv);
+        });
+      }
+
+      function showError(message) {
+        const errorDiv = document.getElementById("error");
+        errorDiv.textContent = message;
+        errorDiv.style.display = "block";
+      }
+
+      // Add after your existing script functions
+      function downloadMindmap() {
+        const svg = document.querySelector(".mermaid svg");
+        if (!svg) {
+          showError("No mindmap to download");
+          return;
+        }
+
+        // Create a canvas and context
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+
+        // Create an image from the SVG
+        const svgData = new XMLSerializer().serializeToString(svg);
+        const img = new Image();
+
+        img.onload = function () {
+          // Scale factor for higher resolution (2x)
+          const scale = 2;
+
+          // Set canvas size to scaled dimensions
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+
+          // Scale the context to improve resolution
+          ctx.scale(scale, scale);
+
+          // Draw white background
+          ctx.fillStyle = "white";
+          ctx.fillRect(0, 0, canvas.width / scale, canvas.height / scale);
+
+          // Draw image at original size (scaling is handled by the context)
+          ctx.drawImage(img, 0, 0);
+
+          // Convert to high-quality PNG and download
+          const link = document.createElement("a");
+          link.download = "mindmap.png";
+          link.href = canvas.toDataURL("image/png", 1.0); // 1.0 is maximum quality
+          link.click();
+        };
+
+        img.src =
+          "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgData);
+      }
+    </script>
+  </body>
+</html>
